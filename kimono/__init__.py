@@ -4,7 +4,7 @@
 # Code Repository: https://github.com/kamurani/kimono
 
 from pathlib import Path
-from kimono.utils.utils import * 
+
 
 PROJECT_ROOT_DIR = Path(__file__).parent.parent
 

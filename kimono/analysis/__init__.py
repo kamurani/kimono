@@ -2,6 +2,7 @@
 
 
 import os
+from typing import List
 import networkx as nx
 import click as ck
 
@@ -12,13 +13,62 @@ from pathlib import Path
 from kimono import SEQUENCE_SAVE_DIR, STRUCTURE_SAVE_DIR, RESULTS_SAVE_DIR
 from kimono.motif import StructuralMotif
 
+from kimono.protein.data import protein_letters_1to3, protein_letters_3to1
+
+from kimono.utils.utils import get_node_id_string
+
+
 from pydantic import BaseModel
+
+class PTMSite():
+    """A site of a post-translational modification on a protein."""
+    def __init__(
+        self,
+        acc_id: str,
+        residue: str, # 1-letter code 
+        position: int,
+        ptm_type: str,
+        chain_id: str = 'A', 
+    ) -> None:
+
+        self.acc_id: str = acc_id # uniprot ID that the PTM site is mapped to.
+
+        self.residue: str = residue 
+        self.position: int = position
+        self.ptm_type: str = ptm_type 
+        self.chain_id: str = chain_id
+
+        if self.chain_id !='A':
+            raise NotImplementedError("Only chain A is supported for now.")
+
+        if len(self.residue) == 3:
+            self.residue = protein_letters_3to1[self.residue.capitalize()] 
+        elif len(self.residue) == 1:
+            self.residue = self.residue.upper()
+        else:
+            raise ValueError(f"Invalid residue: {self.residue}")
+
+        self.node_id: str = get_node_id_string(self.chain_id, self.residue, self.position)
+
+    def __repr__(self):
+        return f"PTMSite({self.acc_id}, {self.node_id})" 
+
+
+        
+
+
+
+
 
 class MotifAnalysisConfig(BaseModel):
     """Configuration for motif analysis."""
+
+
     
     """Data directory."""
     data_dir: Path = None # If not none, this overrides the sequence_path and structure_path 
+
+    dbptm_path: Path = data_dir / "dbptm" / "dbptm.csv" if data_dir is not None else None
 
     """Path to save sequences to."""
     sequence_path: Path = SEQUENCE_SAVE_DIR
@@ -27,6 +77,10 @@ class MotifAnalysisConfig(BaseModel):
     structure_path: Path = STRUCTURE_SAVE_DIR
     structure_format: str = "pdb" 
     structure_database: str = "AF" # AlphaFold, PDB, etc.
+
+    isoform_path: Path = None # Unused for now
+    
+    dataset_path: Path = None 
 
     alphafold_structure_dir: Path = None
 
@@ -73,7 +127,7 @@ class MotifAnalysis():
 
     def __init__(
         self,
-        config: MotifAnalysisConfig = MotifAnalysisConfig(),
+        config: MotifAnalysisConfig = None,
     ) -> None:
 
         self.dataset_path = config.dataset_path
@@ -88,11 +142,16 @@ class MotifAnalysis():
         self.af_model_version       = config.af_model_version
         self.af_file_extension      = config.af_file_extension
  
-      
-        
+        self.dbptm_path = config.dbptm_path
+
+        self.sites = []
 
         if self.use_dataset == "dbptm":
-            self.dbPTM = self._load_dbptm()
+            self.dataset = self._load_dbptm()
+
+        
+        
+        
 
 
         
@@ -101,23 +160,36 @@ class MotifAnalysis():
     
     def _load_dbptm(self) -> pd.DataFrame:
         """Load the DBPTM database."""
-        return pd.read_csv(
-            
+        pass
+        self.df = pd.read_csv(
+            self.dbptm_path, 
         )
+
+        # Create list of sites for each PTM site recorded in the dataset. 
+
+
+        site = PTMSite(
+
+        )
+
+
+
 
     def _load_alphafold(self) -> None:
         """Load an alphafold structure."""
 
         motifs = {}
 
-        
+        self.sites: List[PTMSite]       # set of sites (i.e. ID and residue position)
+        self.motifs                     # subgraph centred around each site # TODO make 
+                                        # this efficient without multiple subgraphs; but 
+                                        # rather just a refernce to the original graph 
 
         for site in self.sites: 
             
+            pdb_path = self.alphafold_structure_dir / self._get_af_filename(site.acc_id)
+
             
-            pdb_path = self.alphafold_structure_dir / self._get_af_filename(
-                acc_id,
-            )
 
         return motifs 
 
