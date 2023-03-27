@@ -24,6 +24,7 @@ class PTMSite():
     """A site of a post-translational modification on a protein."""
     def __init__(
         self,
+        entry_name: str, 
         acc_id: str,
         residue: str, # 1-letter code 
         position: int,
@@ -31,6 +32,7 @@ class PTMSite():
         chain_id: str = 'A', 
     ) -> None:
 
+        self.entry_name: str = entry_name # UniProt entry name
         self.acc_id: str = acc_id # uniprot ID that the PTM site is mapped to.
 
         self.residue: str = residue 
@@ -104,11 +106,16 @@ class MotifAnalysisConfig(BaseModel):
     """Settings"""
     force_download: bool = False # If True, will download all data from scratch regardless of whether it already exists.
 
+    include_isoforms: bool = False # If True, will include sequence isoforms in the analysis.
+
     def __init__(self, **data):
         super().__init__(**data)
 
-        self.structure_path = Path(self.structure_path) / self.structure_database.lower()
+        self.structure_path = Path(self.structure_path) 
+        # self.structure_path = self.structure_path / self.structure_database.lower()
 
+        self.data_dir = Path(self.data_dir) if self.data_dir is not None else None
+        
         force = False
         if not self.structure_path.exists():
             if force is True:
@@ -147,31 +154,62 @@ class MotifAnalysis():
         self.sites = []
 
         if self.use_dataset == "dbptm":
-            self.dataset = self._load_dbptm()
+            self._load_dbptm()
 
-        
-        
-        
-
-
-        
-        
-    
     
     def _load_dbptm(self) -> pd.DataFrame:
         """Load the DBPTM database."""
-        pass
-        self.df = pd.read_csv(
-            self.dbptm_path, 
+        
+        if self.dataset_path is None: # use default dbPTM if `dataset_path` unspecified
+            self.dataset_path = self.dbptm_path
+        
+        print(f"Loading from {self.dataset_path}")
+        df = pd.read_csv(
+            self.dataset_path, 
+            sep="\t",
+            names=[
+                "entry_name",       # dbPTM columns
+                "acc_id", 
+                "position", 
+                "mod_type",
+                "pmids", 
+                "seq_window",  
+            ],
         )
 
+        if not self.include_isoforms:
+            # Remove rows where the `acc_id` is a seqeuence isoform.
+            df = df[~df["acc_id"].str.contains("-")]
+
+        
+        # Create residue column from seq_window.  
+        # This is the character in the `seq_window` which is calculated
+        # by dividing the length of the `seq_window` by 2 and rounding down.
+        return df
+        df["residue"] = df["seq_window"].apply(lambda x: x[int(len(x)/2)]) 
+
+
+        """
+        TODO: 
+        - for each entry, get sequence from uniprot `acc_id`
+        - confirm that middle of `seq_window` residue matches the `acc_id` sequence at the `position` 
+        
+        """
+
+    
         # Create list of sites for each PTM site recorded in the dataset. 
+        for i, row in df.iterrows():
+            ptm_site = PTMSite(
+                entry_name=row["entry_name"],
+                acc_id=row["acc_id"], 
+                residue=row["residue"], 
+                position=row["position"], 
+                ptm_type=row["mod_type"], 
+            )
+            self.sites.append(ptm_site)
 
-
-        site = PTMSite(
-
-        )
-
+        self.dataset = df
+        return df
 
 
 
