@@ -17,46 +17,12 @@ from kimono.protein.data import protein_letters_1to3, protein_letters_3to1
 
 from kimono.utils.utils import get_node_id_string
 
+from kimono.ptm import PTMSite
+
 
 from pydantic import BaseModel
 
-class PTMSite():
-    """A site of a post-translational modification on a protein."""
-    def __init__(
-        self,
-        entry_name: str, 
-        acc_id: str,
-        residue: str, # 1-letter code 
-        position: int,
-        ptm_type: str,
-        chain_id: str = 'A', 
-    ) -> None:
 
-        self.entry_name: str = entry_name # UniProt entry name
-        self.acc_id: str = acc_id # uniprot ID that the PTM site is mapped to.
-
-        self.residue: str = residue 
-        self.position: int = position
-        self.ptm_type: str = ptm_type 
-        self.chain_id: str = chain_id
-
-        if self.chain_id !='A':
-            raise NotImplementedError("Only chain A is supported for now.")
-
-        if len(self.residue) == 3:
-            self.residue = protein_letters_3to1[self.residue.capitalize()] 
-        elif len(self.residue) == 1:
-            self.residue = self.residue.upper()
-        else:
-            raise ValueError(f"Invalid residue: {self.residue}")
-
-        self.node_id: str = get_node_id_string(self.chain_id, self.residue, self.position)
-
-    def __repr__(self):
-        return f"PTMSite({self.acc_id}, {self.node_id})" 
-
-
-        
 
 
 
@@ -108,6 +74,12 @@ class MotifAnalysisConfig(BaseModel):
 
     include_isoforms: bool = False # If True, will include sequence isoforms in the analysis.
 
+
+    """Filter dict for storing a parameter (i.e. column in dataset) and a threshold value"""
+    # plddt score (if available); need to use a file first from a given path in config to then join;
+    # to the dataframe.  If no path exists (none) and threshold specified; then the class automatically 
+    # loads from AF files as we go. 
+
     def __init__(self, **data):
         super().__init__(**data)
 
@@ -131,6 +103,11 @@ class MotifAnalysisConfig(BaseModel):
 
 
 class MotifAnalysis():
+    """
+    TODO: 
+    - separate out a 'phosphositedataset' similar to used in CASM that can be used to compose a MotifAnalysis object
+    - i.e. decouple a lot of the dataset stuff from MotifAnalysis and put in a separate class.
+    """
 
     def __init__(
         self,
@@ -139,7 +116,7 @@ class MotifAnalysis():
 
         self.dataset_path = config.dataset_path
 
-        self.alphafold_structure_dir = config.alphafold_structure_dir
+        self.alphafold_structure_dir = config.alphafold_structure_dir if config.alphafold_structure_dir is not None else config.structure_path
 
         self.use_dataset = config.use_dataset
 
@@ -151,10 +128,19 @@ class MotifAnalysis():
  
         self.dbptm_path = config.dbptm_path
 
+        self.include_isoforms = config.include_isoforms
+
+        self._max_sites = 10 # Restrict number of sites in dataset
+
         self.sites = []
 
         if self.use_dataset == "dbptm":
             self._load_dbptm()
+        else:
+            raise ValueError(f"Invalid dataset: {self.use_dataset}")
+
+        # Load in structures 
+        self._load_structures()
 
     
     def _load_dbptm(self) -> pd.DataFrame:
@@ -176,6 +162,7 @@ class MotifAnalysis():
                 "seq_window",  
             ],
         )
+        df = df.head(self._max_sites) # Restrict number of sites in dataset
 
         if not self.include_isoforms:
             # Remove rows where the `acc_id` is a seqeuence isoform.
@@ -185,9 +172,9 @@ class MotifAnalysis():
         # Create residue column from seq_window.  
         # This is the character in the `seq_window` which is calculated
         # by dividing the length of the `seq_window` by 2 and rounding down.
-        return df
+        df["seq_window"] = df["seq_window"].astype(str)
         df["residue"] = df["seq_window"].apply(lambda x: x[int(len(x)/2)]) 
-
+        
 
         """
         TODO: 
@@ -211,25 +198,57 @@ class MotifAnalysis():
         self.dataset = df
         return df
 
+    def _load_structures(self) -> None:
 
+        # If use alphafold, load structures from alphafold directory
 
-    def _load_alphafold(self) -> None:
+        # TODO: If use alternative structure database, load structures from that directory 
+        
+        motifs = {}
+        for site in self.sites:
+            #site.load_structure(self.alphafold_structure_dir, self.af_model_params)
+            try:
+                motif: StructuralMotif = self._load_alphafold(site=site)
+                motifs[f"{site.entry_name}-{site.node_id}"] = motif
+            except FileNotFoundError:
+                print(f"Alphafold structure not found for {site.acc_id}")
+                continue
+
+        self.motifs = motifs
+
+    def _load_alphafold(
+        self,
+        site: PTMSite,
+
+    ) -> None:
+
         """Load an alphafold structure."""
 
-        motifs = {}
+        
 
-        self.sites: List[PTMSite]       # set of sites (i.e. ID and residue position)
-        self.motifs                     # subgraph centred around each site # TODO make 
-                                        # this efficient without multiple subgraphs; but 
-                                        # rather just a refernce to the original graph 
+        #self.sites: List[PTMSite]          # set of sites (i.e. ID and residue position)
+        #self.motifs: List[StructuralMotif]  # subgraph centred around each site # TODO make 
+                                            # this efficient without multiple subgraphs; but 
+                                            # rather just a refernce to the original graph 
 
-        for site in self.sites: 
+        # TODO: maybe change from List to Dict with key as site ID for easier referencing? 
+
+        
+        pdb_path = self.alphafold_structure_dir / self._get_af_filename(site.acc_id)
+
+        # Check if path is an existing file
+        if not pdb_path.is_file():
+ 
+            raise FileNotFoundError(f"Alphafold structure not found for {site.acc_id} at {pdb_path}")
+        
+        motif = StructuralMotif(
+            site=site,
+            structure_path=pdb_path, 
+        )
+        return motif
             
-            pdb_path = self.alphafold_structure_dir / self._get_af_filename(site.acc_id)
 
-            
-
-        return motifs 
+        
 
 
 
@@ -238,9 +257,9 @@ class MotifAnalysis():
         acc_id: str, 
     ) -> str: 
 
-        if self.ignore_fragments:
+        if self.af_ignore_fragments:
             fragment = 1
-            return f"AF-{acc_id}-F{fragment}-model_v{self.model_version}.{self.file_extension}"
+            return f"AF-{acc_id}-F{fragment}-model_v{self.af_model_version}.{self.af_file_extension}"
         else:
             raise NotImplementedError(f"Multiple fragments for AF structure not implemented.")
     
@@ -252,6 +271,7 @@ class MotifAnalysis():
         self,
     ) -> None:
         """Perform a difference transform on the set of motifs."""
-        
+
+        pass
 
 
