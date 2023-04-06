@@ -1,6 +1,7 @@
 """Classes for analysis of structural motifs."""
 
 
+import json
 import os
 from typing import List
 import networkx as nx
@@ -93,6 +94,7 @@ class MotifAnalysisConfig(BaseModel):
         super().__init__(**data)
 
         self.structure_path = Path(self.structure_path) 
+        self.result_path = Path(self.result_path) if self.result_path is not None else None
         # self.structure_path = self.structure_path / self.structure_database.lower()
 
         self.data_dir = Path(self.data_dir) if self.data_dir is not None else None
@@ -122,8 +124,19 @@ class MotifAnalysis():
         self,
         config: MotifAnalysisConfig = None,
     ) -> None:
+        """Initialize a motif analysis object."""
+
+        self.results = {}
+
 
         self.dataset_path = config.dataset_path
+        self.result_path = config.result_path
+
+        # Make sure the results is a directory
+        if not self.result_path.exists():
+            os.makedirs(self.result_path) 
+        
+
 
         self.alphafold_structure_dir = config.alphafold_structure_dir if config.alphafold_structure_dir is not None else config.structure_path
 
@@ -251,8 +264,6 @@ class MotifAnalysis():
 
         """Load an alphafold structure."""
 
-        
-
         #self.sites: List[PTMSite]          # set of sites (i.e. ID and residue position)
         #self.motifs: List[StructuralMotif]  # subgraph centred around each site # TODO make 
                                             # this efficient without multiple subgraphs; but 
@@ -302,5 +313,38 @@ class MotifAnalysis():
         """Perform a difference transform on the set of motifs."""
 
         pass
+    
+    """
+    Run an analysis workflow on the given sites
+    
+    TODO: 
+    - for now, just runs the difference transform 
+    """
+    def run(
+        self,
+        radius: float = None, 
+    ):
 
+        radius = radius if radius is not None else self.radius
+
+        diff = {
+            k: v.average_difference_transform() for k, v in self.motifs.items()
+        }
+
+        self.difference_transform = diff
+
+        self.results["difference_transform"] = self.difference_transform
+
+    """
+    Saves results to the results directory
+    """
+    def save(
+        self,
+    ):
+        # Save to results directory
+
+
+        path = self.results_path / f"{self.use_dataset}-R{int(self.radius)}.json" 
+        with open(path, "w") as f:
+            json.dump(self.results, f)
 
