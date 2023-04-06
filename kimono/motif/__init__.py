@@ -62,7 +62,11 @@ class StructuralMotif():
         if site is None:
             raise ValueError("Must provide a PTM site.")
 
-        centre_node = site.node_id 
+        self.centre_node = site.node_id 
+        self.granularity = granularity
+
+        self._radius    = radius
+        self._rsa       = rsa
 
         if g is None:
             # TODO: create graph from uniprot ID and residue position 
@@ -84,10 +88,9 @@ class StructuralMotif():
 
         self.g = g 
 
-        self._motif = self._get_motif_subgraph # GET SUBGRAPH 
+        self._motif = self._get_motif_subgraph() # GET SUBGRAPH 
 
-        self._radius    = radius
-        self._rsa       = rsa
+        
 
     @property
     def radius(self) -> float:
@@ -97,6 +100,9 @@ class StructuralMotif():
     def radius(self, radius: float) -> None:
         self._radius = radius
 
+        # Reload subgraph
+        self._motif = self._get_motif_subgraph()
+
         """
         TODO:
         - reload subgraph from original graph 
@@ -105,6 +111,10 @@ class StructuralMotif():
     @property
     def motif(self) -> nx.Graph:
         return self._motif
+
+    @property
+    def nodes(self):
+        return self._motif.nodes(data=False)
 
     def _get_motif_subgraph(self) -> nx.Graph:
         """Get the subgraph of the motif."""
@@ -122,6 +132,12 @@ class StructuralMotif():
         # Subgraph (rsa)
         # TODO
 
+        return s_g
+
+    @property
+    def nodes(self):
+        return self._motif.nodes(data=False)
+
     def _get_protein_subgraph_radius(self, g: nx.Graph, site: str, r: float) -> nx.Graph:
         """Get the subgraph of the motif."""
         # get centre point   
@@ -133,7 +149,48 @@ class StructuralMotif():
         # Get subgraph
         s_g = extract_subgraph_from_point(g, centre_point=x_y_z, radius=r)
         return s_g
-    
+
+    def average_difference_transform(self):
+        """Average difference transform the motif."""
+        
+        diff = self.difference_transform()
+        return sum(diff) / len(diff)
+        
+    def sum_difference_transform(self):
+        """Sum difference transform the motif."""
+        
+        diff = self.difference_transform()
+        return sum(diff)
+
+    def max_difference_transform(self):
+        """Max difference transform the motif."""
+        
+        diff = self.difference_transform()
+        return max(diff)
+
+    def difference_transform(
+        self,
+        zeroed: bool = True, # Consecutive residues will result in 0 difference 
+    ):
+        """Difference transform the motif."""
+        
+        # Iterate through all nodes in motif 
+        l = [
+            int(n.split(":")[-1])
+            for n in self.nodes
+        ]
+        l.sort()
+
+        # Calculate difference transform
+        return [l[i] - l[i-1] - int(zeroed) for i in range(1, len(l))]
+
+    def pos_difference_transform(
+        self,
+    ):
+        """Difference transform with only non zero values."""
+        diff = self.difference_transform()
+        return [d for d in diff if d != 0]
+            
     def __repr__(self) -> str:
         return f"StructuralMotif({self.g.name} @ {self.centre_node}, granularity={self.granularity}, radius={self.radius})"
 

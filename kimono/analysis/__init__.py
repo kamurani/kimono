@@ -6,6 +6,8 @@ from typing import List
 import networkx as nx
 import click as ck
 
+from tqdm import tqdm
+
 import pandas as pd 
 
 from pathlib import Path
@@ -48,6 +50,8 @@ class MotifAnalysisConfig(BaseModel):
 
     isoform_path: Path = None # Unused for now
     
+    max_sites: int = 1000 # Maximum number of PTM sites to include in the analysis.
+
     dataset_path: Path = None 
 
     alphafold_structure_dir: Path = None
@@ -61,6 +65,9 @@ class MotifAnalysisConfig(BaseModel):
         "model_version": 3, 
         "file_extension": "pdb.gz", 
     }
+
+    radius: float = 12.0 # Radius of motif subgraph in Ångströms
+
     
 
     """Which PTM dataset to use."""
@@ -73,6 +80,8 @@ class MotifAnalysisConfig(BaseModel):
     force_download: bool = False # If True, will download all data from scratch regardless of whether it already exists.
 
     include_isoforms: bool = False # If True, will include sequence isoforms in the analysis.
+
+    species_filter: List[str] = None # If not None, will only include sequences from the given species.
 
 
     """Filter dict for storing a parameter (i.e. column in dataset) and a threshold value"""
@@ -130,7 +139,11 @@ class MotifAnalysis():
 
         self.include_isoforms = config.include_isoforms
 
-        self._max_sites = 10 # Restrict number of sites in dataset
+        # Filtering
+        self.species_filter = config.species_filter
+        self._max_sites = config.max_sites
+
+        self.radius = config.radius
 
         self.sites = []
 
@@ -162,6 +175,17 @@ class MotifAnalysis():
                 "seq_window",  
             ],
         )
+
+        #print(df.entry_name)
+        #exit(0)
+        # Add species column, which is the 2nd part of `entry_name` 
+        df["entry_name"] = df["entry_name"].astype(str)
+        df["species"] = df["entry_name"].apply(lambda x: x.split("_")[-1].lower())
+
+        # Filter by species
+        if self.species_filter is not None:
+            df = df[df["species"].isin(self.species_filter)]
+
         df = df.head(self._max_sites) # Restrict number of sites in dataset
 
         if not self.include_isoforms:
@@ -204,17 +228,20 @@ class MotifAnalysis():
 
         # TODO: If use alternative structure database, load structures from that directory 
         
+        failed_sites = []
         motifs = {}
-        for site in self.sites:
+        for site in tqdm(self.sites):
             #site.load_structure(self.alphafold_structure_dir, self.af_model_params)
             try:
                 motif: StructuralMotif = self._load_alphafold(site=site)
                 motifs[f"{site.entry_name}-{site.node_id}"] = motif
             except FileNotFoundError:
+                failed_sites.append(site)
                 print(f"Alphafold structure not found for {site.acc_id}")
                 continue
 
         self.motifs = motifs
+        self.failed_sites = failed_sites
 
     def _load_alphafold(
         self,
@@ -235,6 +262,7 @@ class MotifAnalysis():
 
         
         pdb_path = self.alphafold_structure_dir / self._get_af_filename(site.acc_id)
+        print(pdb_path)
 
         # Check if path is an existing file
         if not pdb_path.is_file():
@@ -244,6 +272,7 @@ class MotifAnalysis():
         motif = StructuralMotif(
             site=site,
             structure_path=pdb_path, 
+            radius=self.radius,
         )
         return motif
             

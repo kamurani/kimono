@@ -18,4 +18,4 @@ def get_node_id_string(
     else:
         raise ValueError(f"Invalid residue: {residue}")
     
-    return NODE_ID_STR.format(chain_id.upper(), residue, str(pos))
+    return NODE_ID_STR.format(chain_id.upper(), residue.upper(), str(pos))
