@@ -10,6 +10,8 @@
 - either order by `RES` seq position, or by increasing distance from `MOD_RSD` 
 - see if this correlates with pLDDT of (psite | average in bubble) which i suspect it will
 
+- add difference transform
+
 - similar to `structuremap`, develop a score for each site along with its `in.IDR` etc. scores 
 - this score represents the "non-linearity" of the particular motif 
 
@@ -21,4 +23,5 @@ The score should reflect the following:
 
 
 
-Use difference transform 
+TODOS:
+- turn high-level linear motif descriptions into 3D structure atomistic coordinates (using graph rep?)
